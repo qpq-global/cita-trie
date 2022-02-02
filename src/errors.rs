@@ -38,7 +38,7 @@ pub enum MemDBError {}
 impl Error for MemDBError {}
 
 impl fmt::Display for MemDBError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "error")
+    fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {}
     }
 }

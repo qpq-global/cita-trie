@@ -13,7 +13,7 @@ homepage = "https://github.com/cryptape/cita-trie"
 documentation = "https://docs.rs/cita_trie"
 
 [dependencies]
-parking_lot = "0.12"
+parking_lot = "0.11"
 rlp = "0.5"
 hasher = { version = "0.1", features = ["hash-keccak"] }
 
