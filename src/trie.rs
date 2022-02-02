@@ -841,7 +841,12 @@ mod tests {
         let mut trie = PatriciaTrie::new(memdb, Arc::new(HasherKeccak::new()));
 
         for _ in 0..1000 {
-            let rand_str: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+            let rand_str: String = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(30)
+                .map(char::from)
+                .collect();
+
             let val = rand_str.as_bytes();
             trie.insert(val.to_vec(), val.to_vec()).unwrap();
 
@@ -874,7 +879,12 @@ mod tests {
         let mut trie = PatriciaTrie::new(memdb, Arc::new(HasherKeccak::new()));
 
         for _ in 0..1000 {
-            let rand_str: String = thread_rng().sample_iter(&Alphanumeric).take(30).collect();
+            let rand_str: String = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(30)
+                .map(char::from)
+                .collect();
+
             let val = rand_str.as_bytes();
             trie.insert(val.to_vec(), val.to_vec()).unwrap();
 
@@ -955,45 +965,53 @@ mod tests {
 
     #[test]
     fn test_multiple_trie_roots() {
-        let k0: ethereum_types::H256 = 0.into();
-        let k1: ethereum_types::H256 = 1.into();
-        let v: ethereum_types::H256 = 0x1234.into();
+        #[derive(Debug)]
+        struct H256([u8; 32]);
+
+        impl H256 {
+            fn from_low_u64_be(v: u64) -> Self {
+                let bytes = v.to_be_bytes();
+                let mut buf = [0; 32];
+
+                let offset = buf.len() - bytes.len();
+                buf[offset..].copy_from_slice(&bytes);
+
+                Self(buf)
+            }
+        }
+
+        let k0 = H256::from_low_u64_be(0);
+        let k1 = H256::from_low_u64_be(1);
+        let v = H256::from_low_u64_be(0x1234);
 
         let root1 = {
             let memdb = Arc::new(MemoryDB::new(true));
             let mut trie = PatriciaTrie::new(memdb, Arc::new(HasherKeccak::new()));
-            trie.insert(k0.as_bytes().to_vec(), v.as_bytes().to_vec())
-                .unwrap();
+            trie.insert(k0.0.to_vec(), v.0.to_vec()).unwrap();
             trie.root().unwrap()
         };
 
         let root2 = {
             let memdb = Arc::new(MemoryDB::new(true));
             let mut trie = PatriciaTrie::new(memdb, Arc::new(HasherKeccak::new()));
-            trie.insert(k0.as_bytes().to_vec(), v.as_bytes().to_vec())
-                .unwrap();
-            trie.insert(k1.as_bytes().to_vec(), v.as_bytes().to_vec())
-                .unwrap();
+            trie.insert(k0.0.to_vec(), v.0.to_vec()).unwrap();
+            trie.insert(k1.0.to_vec(), v.0.to_vec()).unwrap();
             trie.root().unwrap();
-            trie.remove(k1.as_ref()).unwrap();
+            trie.remove(&k1.0).unwrap();
             trie.root().unwrap()
         };
 
         let root3 = {
             let memdb = Arc::new(MemoryDB::new(true));
             let mut trie1 = PatriciaTrie::new(Arc::clone(&memdb), Arc::new(HasherKeccak::new()));
-            trie1
-                .insert(k0.as_bytes().to_vec(), v.as_bytes().to_vec())
-                .unwrap();
-            trie1
-                .insert(k1.as_bytes().to_vec(), v.as_bytes().to_vec())
-                .unwrap();
+            trie1.insert(k0.0.to_vec(), v.0.to_vec()).unwrap();
+            trie1.insert(k1.0.to_vec(), v.0.to_vec()).unwrap();
             trie1.root().unwrap();
             let root = trie1.root().unwrap();
             let mut trie2 =
                 PatriciaTrie::from(Arc::clone(&memdb), Arc::new(HasherKeccak::new()), &root)
                     .unwrap();
-            trie2.remove(&k1.as_bytes().to_vec()).unwrap();
+            trie2.remove(&k1.0).unwrap();
             trie2.root().unwrap()
         };
 
@@ -1009,7 +1027,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut keys = vec![];
         for _ in 0..100 {
-            let random_bytes: Vec<u8> = (0..rng.gen_range(2, 30))
+            let random_bytes: Vec<u8> = (0_usize..rng.gen_range(2..30))
                 .map(|_| rand::random::<u8>())
                 .collect();
             trie.insert(random_bytes.clone(), random_bytes.clone())
@@ -1050,7 +1068,7 @@ mod tests {
     #[test]
     fn iterator_trie() {
         let memdb = Arc::new(MemoryDB::new(true));
-        let mut root1;
+        let root1;
         let mut kv = HashMap::new();
         kv.insert(b"test".to_vec(), b"test".to_vec());
         kv.insert(b"test1".to_vec(), b"test1".to_vec());

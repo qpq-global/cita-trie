@@ -617,7 +617,7 @@ mod trie_tests {
         let mut rng = rand::thread_rng();
         let mut keys = vec![];
         for _ in 0..100 {
-            let random_bytes: Vec<u8> = (0..rng.gen_range(2, 30))
+            let random_bytes: Vec<u8> = (0_usize..rng.gen_range(2..30))
                 .map(|_| rand::random::<u8>())
                 .collect();
             trie.insert(random_bytes.to_vec(), random_bytes.clone())
