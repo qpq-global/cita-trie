@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::nibbles::Nibbles;
+use crate::nibbles::NibbleVec;
 
 #[derive(Debug, Clone)]
 pub enum Node {
@@ -13,7 +13,7 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn from_leaf(key: Nibbles, value: Vec<u8>) -> Self {
+    pub fn from_leaf(key: NibbleVec, value: Vec<u8>) -> Self {
         let leaf = Rc::new(RefCell::new(LeafNode { key, value }));
         Node::Leaf(leaf)
     }
@@ -23,7 +23,7 @@ impl Node {
         Node::Branch(branch)
     }
 
-    pub fn from_extension(prefix: Nibbles, node: Node) -> Self {
+    pub fn from_extension(prefix: NibbleVec, node: Node) -> Self {
         let ext = Rc::new(RefCell::new(ExtensionNode { prefix, node }));
         Node::Extension(ext)
     }
@@ -36,7 +36,7 @@ impl Node {
 
 #[derive(Debug)]
 pub struct LeafNode {
-    pub key: Nibbles,
+    pub key: NibbleVec,
     pub value: Vec<u8>,
 }
 
@@ -63,7 +63,7 @@ impl BranchNode {
 
 #[derive(Debug)]
 pub struct ExtensionNode {
-    pub prefix: Nibbles,
+    pub prefix: NibbleVec,
     pub node: Node,
 }
 

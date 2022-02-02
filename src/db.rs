@@ -44,6 +44,30 @@ pub trait DB: Send + Sync {
     fn flush(&self) -> Result<(), Self::Error>;
 }
 
+impl<T: ?Sized + DB> DB for Arc<T> {
+    type Error = T::Error;
+
+    fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
+        T::get(self, key)
+    }
+
+    fn contains(&self, key: &[u8]) -> Result<bool, Self::Error> {
+        T::contains(self, key)
+    }
+
+    fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error> {
+        T::insert(self, key, value)
+    }
+
+    fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
+        T::remove(self, key)
+    }
+
+    fn flush(&self) -> Result<(), Self::Error> {
+        T::flush(self)
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct MemoryDB {
     // If "light" is true, the data is deleted from the database at the time of submission.
@@ -64,11 +88,7 @@ impl DB for MemoryDB {
     type Error = MemDBError;
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        if let Some(value) = self.storage.read().get(key) {
-            Ok(Some(value.clone()))
-        } else {
-            Ok(None)
-        }
+        Ok(self.storage.read().get(key).cloned())
     }
 
     fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error> {

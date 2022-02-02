@@ -1,13 +1,13 @@
 use std::cmp::min;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Nibbles {
+pub struct NibbleVec {
     hex_data: Vec<u8>,
 }
 
-impl Nibbles {
+impl NibbleVec {
     pub fn from_hex(hex: Vec<u8>) -> Self {
-        Nibbles { hex_data: hex }
+        NibbleVec { hex_data: hex }
     }
 
     pub fn from_raw(raw: Vec<u8>, is_leaf: bool) -> Self {
@@ -19,7 +19,7 @@ impl Nibbles {
         if is_leaf {
             hex_data.push(16);
         }
-        Nibbles { hex_data }
+        NibbleVec { hex_data }
     }
 
     pub fn from_compact(compact: Vec<u8>) -> Self {
@@ -46,7 +46,7 @@ impl Nibbles {
             hex.push(16);
         }
 
-        Nibbles { hex_data: hex }
+        NibbleVec { hex_data: hex }
     }
 
     pub fn is_leaf(&self) -> bool {
@@ -111,7 +111,7 @@ impl Nibbles {
         self.hex_data[i] as usize
     }
 
-    pub fn common_prefix(&self, other_partial: &Nibbles) -> usize {
+    pub fn common_prefix(&self, other_partial: &NibbleVec) -> usize {
         let s = min(self.len(), other_partial.len());
         let mut i = 0usize;
         while i < s {
@@ -123,26 +123,26 @@ impl Nibbles {
         i
     }
 
-    pub fn offset(&self, index: usize) -> Nibbles {
+    pub fn offset(&self, index: usize) -> NibbleVec {
         self.slice(index, self.hex_data.len())
     }
 
-    pub fn slice(&self, start: usize, end: usize) -> Nibbles {
-        Nibbles::from_hex(self.hex_data[start..end].to_vec())
+    pub fn slice(&self, start: usize, end: usize) -> NibbleVec {
+        NibbleVec::from_hex(self.hex_data[start..end].to_vec())
     }
 
     pub fn get_data(&self) -> &[u8] {
         &self.hex_data
     }
 
-    pub fn join(&self, b: &Nibbles) -> Nibbles {
+    pub fn join(&self, b: &NibbleVec) -> NibbleVec {
         let mut hex_data = vec![];
         hex_data.extend_from_slice(self.get_data());
         hex_data.extend_from_slice(b.get_data());
-        Nibbles::from_hex(hex_data)
+        NibbleVec::from_hex(hex_data)
     }
 
-    pub fn extend(&mut self, b: &Nibbles) {
+    pub fn extend(&mut self, b: &NibbleVec) {
         self.hex_data.extend_from_slice(b.get_data());
     }
 
@@ -165,9 +165,9 @@ mod tests {
 
     #[test]
     fn test_nibble() {
-        let n = Nibbles::from_raw(b"key1".to_vec(), true);
+        let n = NibbleVec::from_raw(b"key1".to_vec(), true);
         let compact = n.encode_compact();
-        let n2 = Nibbles::from_compact(compact);
+        let n2 = NibbleVec::from_compact(compact);
         let (raw, is_leaf) = n2.encode_raw();
         assert!(is_leaf);
         assert_eq!(raw, b"key1");

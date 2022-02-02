@@ -8,7 +8,7 @@ use rlp::{Prototype, Rlp, RlpStream};
 
 use crate::db::{MemoryDB, DB};
 use crate::errors::TrieError;
-use crate::nibbles::Nibbles;
+use crate::nibbles::NibbleVec;
 use crate::node::{empty_children, BranchNode, Node};
 
 pub type TrieResult<T> = Result<T, TrieError>;
@@ -57,7 +57,7 @@ where
     root: Node,
     root_hash: Vec<u8>,
 
-    db: Arc<D>,
+    db: D,
     hasher: Arc<H>,
 
     cache: RefCell<HashMap<Vec<u8>, Vec<u8>>>,
@@ -108,7 +108,7 @@ where
     H: Hasher,
 {
     trie: &'a PatriciaTrie<D, H>,
-    nibble: Nibbles,
+    nibble: NibbleVec,
     nodes: Vec<TraceNode>,
 }
 
@@ -200,7 +200,7 @@ where
 
 impl<D, H> PatriciaTrie<D, H>
 where
-    D: DB,
+    D: DB + Clone,
     H: Hasher,
 {
     pub fn iter(&self) -> TrieIterator<D, H> {
@@ -208,12 +208,12 @@ where
         nodes.push((self.root.clone()).into());
         TrieIterator {
             trie: self,
-            nibble: Nibbles::from_raw(vec![], false),
+            nibble: NibbleVec::from_raw(vec![], false),
             nodes,
         }
     }
 
-    pub fn new(db: Arc<D>, hasher: Arc<H>) -> Self {
+    pub fn new(db: D, hasher: Arc<H>) -> Self {
         Self {
             root: Node::Empty,
             root_hash: hasher.digest(&rlp::NULL_RLP.to_vec()),
@@ -227,7 +227,7 @@ where
         }
     }
 
-    pub fn from(db: Arc<D>, hasher: Arc<H>, root: &[u8]) -> TrieResult<Self> {
+    pub fn from(db: D, hasher: Arc<H>, root: &[u8]) -> TrieResult<Self> {
         match db.get(root).map_err(|e| TrieError::DB(e.to_string()))? {
             Some(data) => {
                 let mut trie = Self {
@@ -252,18 +252,18 @@ where
 
 impl<D, H> Trie<D, H> for PatriciaTrie<D, H>
 where
-    D: DB,
+    D: DB + Clone,
     H: Hasher,
 {
     /// Returns the value for key stored in the trie.
     fn get(&self, key: &[u8]) -> TrieResult<Option<Vec<u8>>> {
-        self.get_at(self.root.clone(), &Nibbles::from_raw(key.to_vec(), true))
+        self.get_at(self.root.clone(), &NibbleVec::from_raw(key.to_vec(), true))
     }
 
     /// Checks that the key is present in the trie
     fn contains(&self, key: &[u8]) -> TrieResult<bool> {
         Ok(self
-            .get_at(self.root.clone(), &Nibbles::from_raw(key.to_vec(), true))?
+            .get_at(self.root.clone(), &NibbleVec::from_raw(key.to_vec(), true))?
             .map_or(false, |_| true))
     }
 
@@ -274,14 +274,14 @@ where
             return Ok(());
         }
         let root = self.root.clone();
-        self.root = self.insert_at(root, Nibbles::from_raw(key, true), value.to_vec())?;
+        self.root = self.insert_at(root, NibbleVec::from_raw(key, true), value.to_vec())?;
         Ok(())
     }
 
     /// Removes any existing value for key from the trie.
     fn remove(&mut self, key: &[u8]) -> TrieResult<bool> {
         let (n, removed) =
-            self.delete_at(self.root.clone(), &Nibbles::from_raw(key.to_vec(), true))?;
+            self.delete_at(self.root.clone(), &NibbleVec::from_raw(key.to_vec(), true))?;
         self.root = n;
         Ok(removed)
     }
@@ -301,7 +301,7 @@ where
     /// with the node that proves the absence of the key.
     fn get_proof(&self, key: &[u8]) -> TrieResult<Vec<Vec<u8>>> {
         let mut path =
-            self.get_path_at(self.root.clone(), &Nibbles::from_raw(key.to_vec(), true))?;
+            self.get_path_at(self.root.clone(), &NibbleVec::from_raw(key.to_vec(), true))?;
         match self.root {
             Node::Empty => {}
             _ => path.push(self.root.clone()),
@@ -335,7 +335,7 @@ where
     D: DB,
     H: Hasher,
 {
-    fn get_at(&self, n: Node, partial: &Nibbles) -> TrieResult<Option<Vec<u8>>> {
+    fn get_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<Option<Vec<u8>>> {
         match n {
             Node::Empty => Ok(None),
             Node::Leaf(leaf) => {
@@ -376,7 +376,7 @@ where
         }
     }
 
-    fn insert_at(&self, n: Node, partial: Nibbles, value: Vec<u8>) -> TrieResult<Node> {
+    fn insert_at(&self, n: Node, partial: NibbleVec, value: Vec<u8>) -> TrieResult<Node> {
         match n {
             Node::Empty => Ok(Node::from_leaf(partial, value)),
             Node::Leaf(leaf) => {
@@ -475,7 +475,7 @@ where
         }
     }
 
-    fn delete_at(&self, n: Node, partial: &Nibbles) -> TrieResult<(Node, bool)> {
+    fn delete_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<(Node, bool)> {
         let (new_n, deleted) = match n {
             Node::Empty => Ok((Node::Empty, false)),
             Node::Leaf(leaf) => {
@@ -554,7 +554,7 @@ where
 
                 // if only a value node, transmute to leaf.
                 if used_indexs.is_empty() && borrow_branch.value.is_some() {
-                    let key = Nibbles::from_raw([].to_vec(), true);
+                    let key = NibbleVec::from_raw([].to_vec(), true);
                     let value = borrow_branch.value.clone().unwrap();
                     Ok(Node::from_leaf(key, value))
                 // if only one node. make an extension.
@@ -563,7 +563,7 @@ where
                     let n = borrow_branch.children[used_index].clone();
 
                     let new_node =
-                        Node::from_extension(Nibbles::from_hex(vec![used_index as u8]), n);
+                        Node::from_extension(NibbleVec::from_hex(vec![used_index as u8]), n);
                     self.degenerate(new_node)
                 } else {
                     Ok(Node::Branch(branch.clone()))
@@ -610,7 +610,7 @@ where
     // add them in the path.
     // In the code below, we only add the nodes get by `get_node_from_hash`, because they contains
     // all data stored in db, including nodes whose encoded data is less than hash length.
-    fn get_path_at(&self, n: Node, partial: &Nibbles) -> TrieResult<Vec<Node>> {
+    fn get_path_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<Vec<Node>> {
         match n {
             Node::Empty | Node::Leaf(_) => Ok(vec![]),
             Node::Branch(branch) => {
@@ -759,7 +759,7 @@ where
             Prototype::Data(0) => Ok(Node::Empty),
             Prototype::List(2) => {
                 let key = r.at(0)?.data()?;
-                let key = Nibbles::from_compact(key.to_vec());
+                let key = NibbleVec::from_compact(key.to_vec());
 
                 if key.is_leaf() {
                     Ok(Node::from_leaf(key, r.at(1)?.data()?.to_vec()))
@@ -1081,7 +1081,7 @@ mod tests {
         kv.insert(b"test23".to_vec(), b"test7".to_vec());
         kv.insert(b"test9".to_vec(), b"test8".to_vec());
         {
-            let mut trie = PatriciaTrie::new(memdb.clone(), Arc::new(HasherKeccak::new()));
+            let mut trie = PatriciaTrie::new(Arc::clone(&memdb), Arc::new(HasherKeccak::new()));
             let mut kv = kv.clone();
             kv.iter().for_each(|(k, v)| {
                 trie.insert(k.clone(), v.clone()).unwrap();
@@ -1094,7 +1094,7 @@ mod tests {
         }
 
         {
-            let mut trie = PatriciaTrie::new(memdb.clone(), Arc::new(HasherKeccak::new()));
+            let mut trie = PatriciaTrie::new(Arc::clone(&memdb), Arc::new(HasherKeccak::new()));
             let mut kv2 = HashMap::new();
             kv2.insert(b"test".to_vec(), b"test11".to_vec());
             kv2.insert(b"test1".to_vec(), b"test12".to_vec());
