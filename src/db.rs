@@ -42,11 +42,6 @@ pub trait DB: Send + Sync {
 
     /// Flush data to the DB from the cache.
     fn flush(&self) -> Result<(), Self::Error>;
-
-    #[cfg(test)]
-    fn len(&self) -> Result<usize, Self::Error>;
-    #[cfg(test)]
-    fn is_empty(&self) -> Result<bool, Self::Error>;
 }
 
 #[derive(Default, Debug)]
@@ -94,15 +89,6 @@ impl DB for MemoryDB {
 
     fn flush(&self) -> Result<(), Self::Error> {
         Ok(())
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> Result<usize, Self::Error> {
-        Ok(self.storage.try_read().unwrap().len())
-    }
-    #[cfg(test)]
-    fn is_empty(&self) -> Result<bool, Self::Error> {
-        Ok(self.storage.try_read().unwrap().is_empty())
     }
 }
 

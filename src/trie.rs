@@ -212,6 +212,7 @@ where
             nodes,
         }
     }
+
     pub fn new(db: Arc<D>, hasher: Arc<H>) -> Self {
         Self {
             root: Node::Empty,
