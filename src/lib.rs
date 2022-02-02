@@ -10,14 +10,14 @@
 //! use cita_trie::{PatriciaTrie, Trie};
 
 //! fn main() {
-//!     let memdb = Arc::new(MemoryDB::new(true));
+//!     let memdb = MemoryDB::new(true);
 //!     let hasher = Arc::new(HasherKeccak::new());
 //!
 //!     let key = "test-key".as_bytes();
 //!     let value = "test-value".as_bytes();
 //!
 //!     let root = {
-//!         let mut trie = PatriciaTrie::new(Arc::clone(&memdb), Arc::clone(&hasher));
+//!         let mut trie = PatriciaTrie::new(memdb.clone(), Arc::clone(&hasher));
 //!         trie.insert(key.to_vec(), value.to_vec()).unwrap();
 //!
 //!         let v = trie.get(key).unwrap();
@@ -25,7 +25,7 @@
 //!         trie.root().unwrap()
 //!     };
 //!
-//!     let mut trie = PatriciaTrie::from(Arc::clone(&memdb), Arc::clone(&hasher), &root).unwrap();
+//!     let mut trie = PatriciaTrie::from(memdb.clone(), Arc::clone(&hasher), &root).unwrap();
 //!     let exists = trie.contains(key).unwrap();
 //!     assert_eq!(exists, true);
 //!     let removed = trie.remove(key).unwrap();

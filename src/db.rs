@@ -68,7 +68,7 @@ impl<T: ?Sized + DB> DB for Arc<T> {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct MemoryDB {
     // If "light" is true, the data is deleted from the database at the time of submission.
     light: bool,
