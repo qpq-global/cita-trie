@@ -4,20 +4,17 @@
 //! ```rust
 //! use std::sync::Arc;
 //!
-//! use hasher::{Hasher, HasherKeccak}; // https://crates.io/crates/hasher
-//!
 //! use cita_trie::MemoryDB;
 //! use cita_trie::{PatriciaTrie, Trie};
 
 //! fn main() {
 //!     let memdb = MemoryDB::new(true);
-//!     let hasher = Arc::new(HasherKeccak::new());
 //!
 //!     let key = "test-key".as_bytes();
 //!     let value = "test-value".as_bytes();
 //!
 //!     let root = {
-//!         let mut trie = PatriciaTrie::new(memdb.clone(), Arc::clone(&hasher));
+//!         let mut trie = PatriciaTrie::new(memdb.clone());
 //!         trie.insert(key.to_vec(), value.to_vec()).unwrap();
 //!
 //!         let v = trie.get(key).unwrap();
@@ -25,7 +22,7 @@
 //!         trie.root().unwrap()
 //!     };
 //!
-//!     let mut trie = PatriciaTrie::from(memdb.clone(), Arc::clone(&hasher), &root).unwrap();
+//!     let mut trie = PatriciaTrie::from(memdb.clone(), &root).unwrap();
 //!     let exists = trie.contains(key).unwrap();
 //!     assert_eq!(exists, true);
 //!     let removed = trie.remove(key).unwrap();
