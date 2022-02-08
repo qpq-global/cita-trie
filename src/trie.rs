@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::mem;
 use std::rc::Rc;
 
 use rlp::{Prototype, Rlp, RlpStream};
@@ -7,7 +9,7 @@ use sha3::Digest;
 
 use crate::db::{MemoryDB, DB};
 use crate::errors::TrieError;
-use crate::nibbles::NibbleVec;
+use crate::nibbles::{NibbleSlice, NibbleVec};
 use crate::node::{empty_children, BranchNode, Node};
 
 pub type TrieResult<T> = Result<T, TrieError>;
@@ -58,7 +60,7 @@ where
     db: D,
 
     cache: RefCell<HashMap<Vec<u8>, Vec<u8>>>,
-    passing_keys: RefCell<HashSet<Vec<u8>>>,
+    passing_keys: RefCell<HashSet<[u8; 32]>>,
     gen_keys: RefCell<HashSet<[u8; 32]>>,
 }
 
@@ -142,26 +144,25 @@ where
                     }
 
                     (TraceStatus::Doing, Node::Extension(ref ext)) => {
-                        self.nibble.extend(&ext.borrow().prefix);
+                        self.nibble.extend_from_slice(&ext.borrow().prefix);
                         self.nodes.push((ext.borrow().node.clone()).into());
                     }
 
                     (TraceStatus::Doing, Node::Leaf(ref leaf)) => {
-                        self.nibble.extend(&leaf.borrow().key);
+                        self.nibble.extend_from_slice(&leaf.borrow().key);
                         return Some((self.nibble.encode_raw().0, leaf.borrow().value.clone()));
                     }
 
                     (TraceStatus::Doing, Node::Branch(ref branch)) => {
                         let value = branch.borrow().value.clone();
-                        if value.is_none() {
-                            continue;
-                        } else {
-                            return Some((self.nibble.encode_raw().0, value.unwrap()));
+                        match value {
+                            None => continue,
+                            Some(it) => return Some((self.nibble.encode_raw().0, it)),
                         }
                     }
 
                     (TraceStatus::Doing, Node::Hash(ref hash_node)) => {
-                        if let Ok(n) = self.trie.recover_from_db(&hash_node.borrow().hash.clone()) {
+                        if let Ok(n) = self.trie.recover_from_db(&hash_node.borrow().hash) {
                             self.nodes.pop();
                             self.nodes.push(n.into());
                         } else {
@@ -198,8 +199,7 @@ where
     D: DB + Clone,
 {
     pub fn iter(&self) -> TrieIterator<D> {
-        let mut nodes = Vec::new();
-        nodes.push((self.root.clone()).into());
+        let nodes = vec![(self.root.clone()).into()];
         TrieIterator {
             trie: self,
             nibble: NibbleVec::from_raw(vec![], false),
@@ -265,7 +265,7 @@ where
             return Ok(());
         }
         let root = self.root.clone();
-        self.root = self.insert_at(root, NibbleVec::from_raw(key, true), value.to_vec())?;
+        self.root = self.insert_at(root, &NibbleVec::from_raw(key, true), value.to_vec())?;
         Ok(())
     }
 
@@ -326,13 +326,13 @@ impl<D> PatriciaTrie<D>
 where
     D: DB,
 {
-    fn get_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<Option<Vec<u8>>> {
+    fn get_at(&self, n: Node, partial: &NibbleSlice) -> TrieResult<Option<Vec<u8>>> {
         match n {
             Node::Empty => Ok(None),
             Node::Leaf(leaf) => {
                 let borrow_leaf = leaf.borrow();
 
-                if &borrow_leaf.key == partial {
+                if &*borrow_leaf.key == partial {
                     Ok(Some(borrow_leaf.value.clone()))
                 } else {
                     Ok(None)
@@ -345,7 +345,7 @@ where
                     Ok(borrow_branch.value.clone())
                 } else {
                     let index = partial.at(0);
-                    self.get_at(borrow_branch.children[index].clone(), &partial.offset(1))
+                    self.get_at(borrow_branch.children[index].clone(), partial.offset(1))
                 }
             }
             Node::Extension(extension) => {
@@ -354,7 +354,7 @@ where
                 let prefix = &extension.prefix;
                 let match_len = partial.common_prefix(prefix);
                 if match_len == prefix.len() {
-                    self.get_at(extension.node.clone(), &partial.offset(match_len))
+                    self.get_at(extension.node.clone(), partial.offset(match_len))
                 } else {
                     Ok(None)
                 }
@@ -367,9 +367,9 @@ where
         }
     }
 
-    fn insert_at(&self, n: Node, partial: NibbleVec, value: Vec<u8>) -> TrieResult<Node> {
+    fn insert_at(&self, n: Node, partial: &NibbleSlice, value: Vec<u8>) -> TrieResult<Node> {
         match n {
-            Node::Empty => Ok(Node::from_leaf(partial, value)),
+            Node::Empty => Ok(Node::from_leaf(partial.to_owned(), value)),
             Node::Leaf(leaf) => {
                 let mut borrow_leaf = leaf.borrow_mut();
 
@@ -392,7 +392,7 @@ where
                 );
                 branch.insert(old_partial.at(match_index), n);
 
-                let n = Node::from_leaf(partial.offset(match_index + 1), value);
+                let n = Node::from_leaf(partial.offset(match_index + 1).to_owned(), value);
                 branch.insert(partial.at(match_index), n);
 
                 if match_index == 0 {
@@ -401,7 +401,7 @@ where
 
                 // if include a common prefix
                 Ok(Node::from_extension(
-                    partial.slice(0, match_index),
+                    partial.slice(0, match_index).to_owned(),
                     Node::Branch(Rc::new(RefCell::new(branch))),
                 ))
             }
@@ -457,22 +457,20 @@ where
             Node::Hash(hash_node) => {
                 let borrow_hash_node = hash_node.borrow();
 
-                self.passing_keys
-                    .borrow_mut()
-                    .insert(borrow_hash_node.hash.to_vec());
+                self.passing_keys.borrow_mut().insert(borrow_hash_node.hash);
                 let n = self.recover_from_db(&borrow_hash_node.hash)?;
                 self.insert_at(n, partial, value)
             }
         }
     }
 
-    fn delete_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<(Node, bool)> {
+    fn delete_at(&self, n: Node, partial: &NibbleSlice) -> TrieResult<(Node, bool)> {
         let (new_n, deleted) = match n {
             Node::Empty => Ok((Node::Empty, false)),
             Node::Leaf(leaf) => {
                 let borrow_leaf = leaf.borrow();
 
-                if &borrow_leaf.key == partial {
+                if &*borrow_leaf.key == partial {
                     return Ok((Node::Empty, true));
                 }
                 Ok((Node::Leaf(leaf.clone()), false))
@@ -488,7 +486,7 @@ where
                 let index = partial.at(0);
                 let node = borrow_branch.children[index].clone();
 
-                let (new_n, deleted) = self.delete_at(node, &partial.offset(1))?;
+                let (new_n, deleted) = self.delete_at(node, partial.offset(1))?;
                 if deleted {
                     borrow_branch.children[index] = new_n;
                 }
@@ -503,7 +501,7 @@ where
 
                 if match_len == prefix.len() {
                     let (new_n, deleted) =
-                        self.delete_at(borrow_ext.node.clone(), &partial.offset(match_len))?;
+                        self.delete_at(borrow_ext.node.clone(), partial.offset(match_len))?;
 
                     if deleted {
                         borrow_ext.node = new_n;
@@ -515,8 +513,8 @@ where
                 }
             }
             Node::Hash(hash_node) => {
-                let hash = hash_node.borrow().hash.clone();
-                self.passing_keys.borrow_mut().insert(hash.clone());
+                let hash = hash_node.borrow().hash;
+                self.passing_keys.borrow_mut().insert(hash);
 
                 let n = self.recover_from_db(&hash)?;
                 self.delete_at(n, partial)
@@ -535,29 +533,43 @@ where
             Node::Branch(branch) => {
                 let borrow_branch = branch.borrow();
 
-                let mut used_indexs = vec![];
+                let mut empty = true;
+                let mut ext_to = None;
+
                 for (index, node) in borrow_branch.children.iter().enumerate() {
                     match node {
                         Node::Empty => continue,
-                        _ => used_indexs.push(index),
+                        _ => {
+                            let was_empty = mem::replace(&mut empty, false);
+                            // if there's exactly one used node, store its index,
+                            // set another flag if at least one node is not mpty
+                            if ext_to.is_none() && was_empty {
+                                ext_to = Some(index);
+                            } else {
+                                ext_to = None;
+                                break;
+                            }
+                        }
                     }
                 }
 
-                // if only a value node, transmute to leaf.
-                if used_indexs.is_empty() && borrow_branch.value.is_some() {
-                    let key = NibbleVec::from_raw([].to_vec(), true);
-                    let value = borrow_branch.value.clone().unwrap();
-                    Ok(Node::from_leaf(key, value))
-                // if only one node. make an extension.
-                } else if used_indexs.len() == 1 && borrow_branch.value.is_none() {
-                    let used_index = used_indexs[0];
-                    let n = borrow_branch.children[used_index].clone();
+                match (empty, ext_to, borrow_branch.value.as_ref()) {
+                    // if only a value node, transmute to leaf.
+                    (true, None, Some(_)) => {
+                        let key = NibbleVec::from_raw(vec![], true);
+                        let value = borrow_branch.value.clone().unwrap();
+                        Ok(Node::from_leaf(key, value))
+                    }
+                    (true, Some(_), _) => unreachable!(),
+                    // if only one node. make an extension.
+                    (false, Some(used_index), None) => {
+                        let n = borrow_branch.children[used_index].clone();
 
-                    let new_node =
-                        Node::from_extension(NibbleVec::from_hex(vec![used_index as u8]), n);
-                    self.degenerate(new_node)
-                } else {
-                    Ok(Node::Branch(branch.clone()))
+                        let new_node =
+                            Node::from_extension(NibbleVec::from_hex(vec![used_index as u8]), n);
+                        self.degenerate(new_node)
+                    }
+                    _ => Ok(Node::Branch(branch.clone())),
                 }
             }
             Node::Extension(ext) => {
@@ -580,8 +592,8 @@ where
                     }
                     // try again after recovering node from the db.
                     Node::Hash(hash_node) => {
-                        let hash = hash_node.borrow().hash.clone();
-                        self.passing_keys.borrow_mut().insert(hash.clone());
+                        let hash = hash_node.borrow().hash;
+                        self.passing_keys.borrow_mut().insert(hash);
 
                         let new_node = self.recover_from_db(&hash)?;
 
@@ -678,7 +690,7 @@ where
     fn encode_node(&self, n: Node) -> Vec<u8> {
         // Returns the hash value directly to avoid double counting.
         if let Node::Hash(hash_node) = n {
-            return hash_node.borrow().hash.clone();
+            return hash_node.borrow().hash.to_vec();
         }
 
         let data = self.encode_raw(n.clone());
@@ -781,7 +793,7 @@ where
             }
             _ => {
                 if r.is_data() && r.size() == sha3::Keccak256::output_size() {
-                    Ok(Node::from_hash(r.data()?.to_vec()))
+                    Ok(Node::from_hash(r.data()?.try_into().unwrap()))
                 } else {
                     Err(TrieError::InvalidData)
                 }

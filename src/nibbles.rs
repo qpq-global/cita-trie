@@ -1,3 +1,65 @@
+use std::borrow::Borrow;
+use std::ops::Deref;
+
+#[derive(Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct NibbleSlice([u8]);
+
+impl NibbleSlice {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn at(&self, i: usize) -> usize {
+        self.0[i] as usize
+    }
+
+    pub fn common_prefix(&self, other_partial: &Self) -> usize {
+        self.0
+            .iter()
+            .zip(other_partial.0.iter())
+            .take_while(|it| it.0 == it.1)
+            .count()
+    }
+
+    pub fn offset(&self, index: usize) -> &Self {
+        self.slice(index, self.len())
+    }
+
+    pub fn slice(&self, start: usize, end: usize) -> &Self {
+        let data = &self.0[start..end];
+        // safety: NibbleSlice is `repr(transparent)` over `[u8]`, so transmutes between the two are okay.
+        unsafe {
+            let slice = data;
+            std::mem::transmute::<&[u8], &Self>(slice)
+        }
+    }
+}
+
+impl ToOwned for NibbleSlice {
+    type Owned = NibbleVec;
+
+    fn to_owned(&self) -> Self::Owned {
+        NibbleVec {
+            hex_data: self.0.to_vec(),
+        }
+    }
+}
+
+impl Borrow<NibbleSlice> for NibbleVec {
+    fn borrow(&self) -> &NibbleSlice {
+        // safety: NibbleSlice is `repr(transparent)` over `[u8]`, so transmutes between the two are okay.
+        unsafe {
+            let slice = self.hex_data.as_slice();
+            std::mem::transmute::<&[u8], &NibbleSlice>(slice)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NibbleVec {
     hex_data: Vec<u8>,
@@ -94,26 +156,6 @@ impl NibbleVec {
         (raw, is_leaf)
     }
 
-    pub fn len(&self) -> usize {
-        self.hex_data.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn at(&self, i: usize) -> usize {
-        self.hex_data[i] as usize
-    }
-
-    pub fn common_prefix(&self, other_partial: &NibbleVec) -> usize {
-        self.hex_data
-            .iter()
-            .zip(other_partial.hex_data.iter())
-            .take_while(|it| it.0 == it.1)
-            .count()
-    }
-
     pub fn offset(&self, index: usize) -> NibbleVec {
         self.slice(index, self.hex_data.len())
     }
@@ -129,8 +171,8 @@ impl NibbleVec {
         NibbleVec::from_hex(hex_data)
     }
 
-    pub fn extend(&mut self, b: &NibbleVec) {
-        self.hex_data.extend_from_slice(&b.hex_data);
+    pub fn extend_from_slice(&mut self, b: &NibbleSlice) {
+        self.hex_data.extend_from_slice(&b.0);
     }
 
     pub fn truncate(&mut self, len: usize) {
@@ -143,6 +185,14 @@ impl NibbleVec {
 
     pub fn push(&mut self, e: u8) {
         self.hex_data.push(e)
+    }
+}
+
+impl Deref for NibbleVec {
+    type Target = NibbleSlice;
+
+    fn deref(&self) -> &Self::Target {
+        self.borrow()
     }
 }
 
