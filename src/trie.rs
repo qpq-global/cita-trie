@@ -60,7 +60,7 @@ where
     db: D,
 
     cache: RefCell<HashMap<Vec<u8>, Vec<u8>>>,
-    passing_keys: RefCell<HashSet<[u8; 32]>>,
+    passing_keys: HashSet<[u8; 32]>,
     gen_keys: RefCell<HashSet<[u8; 32]>>,
 }
 
@@ -213,7 +213,7 @@ where
             root_hash: sha3::Keccak256::digest(&rlp::NULL_RLP).to_vec(),
 
             cache: RefCell::new(HashMap::new()),
-            passing_keys: RefCell::new(HashSet::new()),
+            passing_keys: HashSet::new(),
             gen_keys: RefCell::new(HashSet::new()),
 
             db,
@@ -228,7 +228,7 @@ where
                     root_hash: root.to_vec(),
 
                     cache: RefCell::new(HashMap::new()),
-                    passing_keys: RefCell::new(HashSet::new()),
+                    passing_keys: HashSet::new(),
                     gen_keys: RefCell::new(HashSet::new()),
 
                     db,
@@ -367,7 +367,7 @@ where
         }
     }
 
-    fn insert_at(&self, n: Node, partial: &NibbleSlice, value: Vec<u8>) -> TrieResult<Node> {
+    fn insert_at(&mut self, n: Node, partial: &NibbleSlice, value: Vec<u8>) -> TrieResult<Node> {
         match n {
             Node::Empty => Ok(Node::from_leaf(partial.to_owned(), value)),
             Node::Leaf(leaf) => {
@@ -387,7 +387,7 @@ where
                 };
 
                 let n = Node::from_leaf(
-                    old_partial.offset(match_index + 1),
+                    old_partial.offset(match_index + 1).to_owned(),
                     borrow_leaf.value.clone(),
                 );
                 branch.insert(old_partial.at(match_index), n);
@@ -435,7 +435,7 @@ where
                         if prefix.len() == 1 {
                             sub_node
                         } else {
-                            Node::from_extension(prefix.offset(1), sub_node)
+                            Node::from_extension(prefix.offset(1).to_owned(), sub_node)
                         },
                     );
                     let node = Node::Branch(Rc::new(RefCell::new(branch)));
@@ -448,23 +448,23 @@ where
                     return Ok(Node::from_extension(prefix.clone(), new_node));
                 }
 
-                let new_ext = Node::from_extension(prefix.offset(match_index), sub_node);
+                let new_ext = Node::from_extension(prefix.offset(match_index).to_owned(), sub_node);
                 let new_node = self.insert_at(new_ext, partial.offset(match_index), value)?;
-                borrow_ext.prefix = prefix.slice(0, match_index);
+                borrow_ext.prefix = prefix.slice(0, match_index).to_owned();
                 borrow_ext.node = new_node;
                 Ok(Node::Extension(ext.clone()))
             }
             Node::Hash(hash_node) => {
                 let borrow_hash_node = hash_node.borrow();
 
-                self.passing_keys.borrow_mut().insert(borrow_hash_node.hash);
+                self.passing_keys.insert(borrow_hash_node.hash);
                 let n = self.recover_from_db(&borrow_hash_node.hash)?;
                 self.insert_at(n, partial, value)
             }
         }
     }
 
-    fn delete_at(&self, n: Node, partial: &NibbleSlice) -> TrieResult<(Node, bool)> {
+    fn delete_at(&mut self, n: Node, partial: &NibbleSlice) -> TrieResult<(Node, bool)> {
         let (new_n, deleted) = match n {
             Node::Empty => Ok((Node::Empty, false)),
             Node::Leaf(leaf) => {
@@ -514,7 +514,7 @@ where
             }
             Node::Hash(hash_node) => {
                 let hash = hash_node.borrow().hash;
-                self.passing_keys.borrow_mut().insert(hash);
+                self.passing_keys.insert(hash);
 
                 let n = self.recover_from_db(&hash)?;
                 self.delete_at(n, partial)
@@ -528,7 +528,7 @@ where
         }
     }
 
-    fn degenerate(&self, n: Node) -> TrieResult<Node> {
+    fn degenerate(&mut self, n: Node) -> TrieResult<Node> {
         match n {
             Node::Branch(branch) => {
                 let borrow_branch = branch.borrow();
@@ -593,7 +593,7 @@ where
                     // try again after recovering node from the db.
                     Node::Hash(hash_node) => {
                         let hash = hash_node.borrow().hash;
-                        self.passing_keys.borrow_mut().insert(hash);
+                        self.passing_keys.insert(hash);
 
                         let new_node = self.recover_from_db(&hash)?;
 
@@ -613,7 +613,7 @@ where
     // add them in the path.
     // In the code below, we only add the nodes get by `get_node_from_hash`, because they contains
     // all data stored in db, including nodes whose encoded data is less than hash length.
-    fn get_path_at(&self, n: Node, partial: &NibbleVec) -> TrieResult<Vec<Node>> {
+    fn get_path_at(&self, n: Node, partial: &NibbleSlice) -> TrieResult<Vec<Node>> {
         match n {
             Node::Empty | Node::Leaf(_) => Ok(vec![]),
             Node::Branch(branch) => {
@@ -657,22 +657,14 @@ where
             encoded
         };
 
-        let mut keys = Vec::with_capacity(self.cache.borrow().len());
-        let mut values = Vec::with_capacity(self.cache.borrow().len());
-        for (k, v) in self.cache.borrow_mut().drain() {
-            keys.push(k.to_vec());
-            values.push(v);
-        }
-
         self.db
-            .insert_batch(keys, values)
+            .insert_batch(self.cache.borrow_mut().drain())
             .map_err(|e| TrieError::DB(e.to_string()))?;
 
         let removed_keys: Vec<Vec<u8>> = self
             .passing_keys
-            .borrow()
             .iter()
-            .filter(|h| !self.gen_keys.borrow().contains(&h[..]))
+            .filter(|h| !self.gen_keys.borrow().contains(*h))
             .map(|h| h.to_vec())
             .collect();
 
@@ -682,7 +674,7 @@ where
 
         self.root_hash = root_hash.to_vec();
         self.gen_keys.borrow_mut().clear();
-        self.passing_keys.borrow_mut().clear();
+        self.passing_keys.clear();
         self.root = self.recover_from_db(&root_hash)?;
         Ok(root_hash)
     }

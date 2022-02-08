@@ -23,19 +23,24 @@ pub trait DB: Send + Sync {
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error>;
 
     /// Insert a batch of data into the cache.
-    fn insert_batch(&self, keys: Vec<Vec<u8>>, values: Vec<Vec<u8>>) -> Result<(), Self::Error> {
-        for i in 0..keys.len() {
-            let key = keys[i].clone();
-            let value = values[i].clone();
+    fn insert_batch<I>(&self, items: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = (Vec<u8>, Vec<u8>)>,
+    {
+        for (key, value) in items {
             self.insert(key, value)?;
         }
+
         Ok(())
     }
 
     /// Remove a batch of data into the cache.
-    fn remove_batch(&self, keys: &[Vec<u8>]) -> Result<(), Self::Error> {
+    fn remove_batch<I: IntoIterator<Item = A>, A: AsRef<[u8]>>(
+        &self,
+        keys: I,
+    ) -> Result<(), Self::Error> {
         for key in keys {
-            self.remove(key)?;
+            self.remove(key.as_ref())?;
         }
         Ok(())
     }
