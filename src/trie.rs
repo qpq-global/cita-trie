@@ -59,7 +59,7 @@ where
 
     cache: RefCell<HashMap<Vec<u8>, Vec<u8>>>,
     passing_keys: RefCell<HashSet<Vec<u8>>>,
-    gen_keys: RefCell<HashSet<Vec<u8>>>,
+    gen_keys: RefCell<HashSet<[u8; 32]>>,
 }
 
 #[derive(Clone, Debug)]
@@ -660,7 +660,7 @@ where
             .passing_keys
             .borrow()
             .iter()
-            .filter(|h| !self.gen_keys.borrow().contains(&h.to_vec()))
+            .filter(|h| !self.gen_keys.borrow().contains(&h[..]))
             .map(|h| h.to_vec())
             .collect();
 
@@ -690,7 +690,7 @@ where
             let hash = sha3::Keccak256::digest(&data);
             self.cache.borrow_mut().insert(hash.to_vec(), data);
 
-            self.gen_keys.borrow_mut().insert(hash.to_vec());
+            self.gen_keys.borrow_mut().insert(hash.into());
             hash.to_vec()
         }
     }
